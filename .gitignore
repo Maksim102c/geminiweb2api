@@ -5,6 +5,7 @@ __pycache__/
 chrome_profile/
 logs.txt
 logs/
+*.jsonl
 handoff_*/
 
 # Python / virtualenv

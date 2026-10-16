@@ -108,8 +108,6 @@ def launch_browser_context(playwright, profile_dir, proxy_config, headless_mode)
         "--disable-blink-features=AutomationControlled",
         "--disable-infobars"
     ]
-    if not headless_mode:
-        browser_args.append("--start-minimized")
 
     last_error = None
     for candidate in get_browser_launch_candidates():

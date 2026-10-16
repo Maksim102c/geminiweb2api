@@ -1301,15 +1301,34 @@ async def generate_text_core(
     if not snlm0e: 
         return None
 
-    mode_id = "56fdd199312815e2"
+    mode_id = "56fdd199312815e2"  # 3.8 Flash по умолчанию
     model_type = 1
     thinking_level = 1
-    is_extended = "extended" in model_name.lower()
-    if is_extended:
-        thinking_level = 2
-    if "pro" in model_name.lower():
+
+    lower_model = str(model_name or "").lower()
+    if "argon" in lower_model:
+        mode_id = "95a4c0abcba24364"
+        model_type = 3
+    elif "pro" in lower_model:
         mode_id = "e6fa609c3fa255c0"
         model_type = 3
+    elif "lite" in lower_model:
+        mode_id = "8c46e95b1a07cecc"
+        model_type = 1
+    else:
+        mode_id = "56fdd199312815e2"
+        model_type = 1
+
+    if any(token in lower_model for token in ("extended", "deep", "high", "thinking-3")):
+        thinking_level = 3
+    elif any(token in lower_model for token in ("medium", "moderate", "thinking-2")):
+        thinking_level = 2
+    elif any(token in lower_model for token in ("standard", "low", "thinking-1")):
+        thinking_level = 1
+    elif any(token in lower_model for token in ("thinking", "think")):
+        thinking_level = 3
+
+    is_extended = thinking_level > 1
 
     if CURRENT_MODEL_ID != mode_id or CURRENT_THINKING_LEVEL != thinking_level:
         success = await set_model_preference(snlm0e, mode_id, is_extended=is_extended)
@@ -1399,10 +1418,13 @@ async def generate_text_core(
                 return None
                 
             async for line in resp.aiter_lines():
-                if await request.is_disconnected():
-                    spinner.cancel()
-                    print_sys("🛑 [ПРЕРВАНО] Клиент (Таверна) отменил запрос (нажата кнопка Stop). Разрываем соединение.")
-                    return None
+                try:
+                    if request and await request.is_disconnected():
+                        spinner.cancel()
+                        print_sys("🛑 [ПРЕРВАНО] Клиент (Таверна) отменил запрос (нажата кнопка Stop). Разрываем соединение.")
+                        return None
+                except Exception:
+                    pass
                 
                 if line:
                     raw_line_count += 1
@@ -1881,34 +1903,49 @@ def normalize_requested_model(model_name, force_extended=False):
 
     if normalized.startswith("/v1beta/models/"):
         normalized = normalized[len("/v1beta/models/"):]
-    # Допускаем повторяющийся `models/` префикс — некоторые клиенты шлют `models/gemini-...`,
-    # после которого ST/SDK ещё раз добавляют `models/` в URL.
     while normalized.startswith("models/"):
         normalized = normalized[len("models/"):]
     if ":" in normalized:
         normalized = normalized.split(":", 1)[0]
 
-    # Картиночные nano-banana-модели пропускаем как есть — для них своя ветка.
     if "nano-banana" in normalized:
         return normalized
 
-    is_pro = "pro" in normalized
-    is_flash = "flash" in normalized
-    is_thinking = any(token in normalized for token in ("extended", "thinking", "think"))
+    is_argon = "argon" in normalized
+    is_lite = "lite" in normalized
+    is_pro = "pro" in normalized and not is_argon
+    is_flash = "flash" in normalized and not is_lite
+
+    is_deep = any(token in normalized for token in ("extended", "deep", "high", "thinking-3", "thinking_3"))
+    is_medium = any(token in normalized for token in ("medium", "moderate", "thinking-2", "thinking_2"))
+    is_standard = any(token in normalized for token in ("standard", "low", "thinking-1", "thinking_1"))
+    is_thinking = is_deep or is_medium or any(token in normalized for token in ("thinking", "think"))
 
     if force_extended:
-        # v1beta: всё сводим к extended-моделям
+        if is_argon:
+            return "gemini-4-argon-extended"
         if is_pro:
             return "gemini-3.1-pro-extended"
+        if is_lite:
+            return "gemini-3.5-flash-lite"
         if is_flash:
-            return "gemini-3.5-flash-extended"
+            return "gemini-3.8-flash-extended"
         return normalized
 
-    # v1: чёткое разделение pro/flash + extended/preview
+    if is_argon:
+        if is_deep: return "gemini-4-argon-extended"
+        if is_medium: return "gemini-4-argon-medium"
+        return "gemini-4-argon-extended" if is_thinking else "gemini-4-argon"
     if is_pro:
+        if is_deep: return "gemini-3.1-pro-extended"
+        if is_medium: return "gemini-3.1-pro-medium"
         return "gemini-3.1-pro-extended" if is_thinking else "gemini-3.1-pro-preview"
+    if is_lite:
+        return "gemini-3.5-flash-lite"
     if is_flash:
-        return "gemini-3.5-flash-extended" if is_thinking else "gemini-3.5-flash"
+        if is_deep: return "gemini-3.8-flash-extended"
+        if is_medium: return "gemini-3.8-flash-medium"
+        return "gemini-3.8-flash-extended" if is_thinking else "gemini-3.8-flash"
     return normalized
 
 def coerce_message_content_to_text(content):
@@ -2448,12 +2485,18 @@ async def list_models(request: Request):
     try:
         print_sys(f"\n{'='*50}\n🔍 ЗАПРОС СПИСКА МОДЕЛЕЙ\n{'='*50}")
         models = [
-            {"id": "nano-banana-pro", "object": "model", "created": 1712050000, "owned_by": "google"},
-            {"id": "nano-banana-2", "object": "model", "created": 1712050000, "owned_by": "google"},
+            {"id": "gemini-4-argon", "object": "model", "created": 1712050000, "owned_by": "google"},
+            {"id": "gemini-4-argon-extended", "object": "model", "created": 1712050000, "owned_by": "google"},
+            {"id": "gemini-4-argon-medium", "object": "model", "created": 1712050000, "owned_by": "google"},
+            {"id": "gemini-3.8-flash", "object": "model", "created": 1712050000, "owned_by": "google"},
+            {"id": "gemini-3.8-flash-extended", "object": "model", "created": 1712050000, "owned_by": "google"},
+            {"id": "gemini-3.5-flash-lite", "object": "model", "created": 1712050000, "owned_by": "google"},
+            {"id": "gemini-3.1-pro-preview", "object": "model", "created": 1712050000, "owned_by": "google"},
+            {"id": "gemini-3.1-pro-extended", "object": "model", "created": 1712050000, "owned_by": "google"},
             {"id": "gemini-3.5-flash", "object": "model", "created": 1712050000, "owned_by": "google"},
             {"id": "gemini-3.5-flash-extended", "object": "model", "created": 1712050000, "owned_by": "google"},
-            {"id": "gemini-3.1-pro-preview", "object": "model", "created": 1712050000, "owned_by": "google"},
-            {"id": "gemini-3.1-pro-extended", "object": "model", "created": 1712050000, "owned_by": "google"}
+            {"id": "nano-banana-pro", "object": "model", "created": 1712050000, "owned_by": "google"},
+            {"id": "nano-banana-2", "object": "model", "created": 1712050000, "owned_by": "google"}
         ]
         for m in models:
             print_sys(f"  - {m['id']}")

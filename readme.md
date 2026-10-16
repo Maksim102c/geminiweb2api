@@ -1,6 +1,6 @@
 # 🍌 GeminiWeb2API
 
-> **Версия:** 1.3  
+> **Версия:** 1.4  
 > **Автор:** [@roflenskoy](https://t.me/roflenskoy) (Telegram)  
 > **Репозиторий:** [github.com/l4ckofsleep/geminiweb2api](https://github.com/l4ckofsleep/geminiweb2api)
 
@@ -60,31 +60,41 @@ API автоматически отправляет скрытые сигнал�
 ### Доступные модели
 
 | ID | Описание | Подписка |
-|----|----------|----------|
-| `gemini-3.5-flash` | Базовая, очень быстрая текстовая модель. | Нет |
-| `gemini-3.5-flash-extended` | Расширенное рассуждение (Thinking). | Нет |
-| `gemini-3.1-pro-preview` | Тяжёлая, максимально умная модель. | Да (Pro) |
-| `gemini-3.1-pro-extended` | Pro с расширенным рассуждением. | Да (Pro) |
-| `nano-banana-2` | Простая бесплатная модель. | Нет |
+|----|----------|:---:|
+| `gemini-4-argon` | Флагманская модель для сложнейших задач. | Да (Pro) |
+| `gemini-4-argon-extended` | 4 Argon с глубоким рассуждением (Thinking Level: High/Deep). | Да (Pro) |
+| `gemini-4-argon-medium` | 4 Argon с умеренным рассуждением (Thinking Level: Medium). | Да (Pro) |
+| `gemini-3.8-flash` | Актуальная базовая быстрая модель Gemini Web. | Нет |
+| `gemini-3.8-flash-extended` | 3.8 Flash с расширенным рассуждением. | Нет |
+| `gemini-3.5-flash-lite` | Ультра-быстрые краткие ответы. | Нет |
+| `gemini-3.1-pro-preview` | Тяжёлая интеллектуальная модель. | Да (Pro) |
+| `gemini-3.1-pro-extended` | 3.1 Pro с расширенным рассуждением. | Да (Pro) |
+| `nano-banana-2` | Генерация картинок (базовая бесплатная). | Нет |
 | `nano-banana-pro` | Продвинутая модель для картинок. | Да (Pro) |
+
+### Режимы рассуждения (Thinking / Думалка)
+
+В Gemini Web доступно 3 уровня рассуждений, выбираемых суффиксом в названии модели:
+- **Уровень 1 (Низкая / Standard):** базовое имя (`gemini-4-argon`, `gemini-3.8-flash`) или суффикс `-standard` / `-low`.
+- **Уровень 2 (Средний / Medium):** суффикс `-medium` / `-moderate` (например, `gemini-4-argon-medium`).
+- **Уровень 3 (Высокая / Extended):** суффикс `-extended` / `-deep` / `-high` / `-thinking` (например, `gemini-4-argon-extended`).
 
 ### Alias-имена (синонимы)
 
 **При подключении через `/v1/chat/completions` (OpenAI-совместимый):**
-- `gemini-3.5-flash` → `gemini-3.5-flash` (базовая)
-- `gemini-3.5-flash-extended` / `gemini-3.5-flash-thinking` → `gemini-3.5-flash-extended`
-- `gemini-3.1-pro-preview` → `gemini-3.1-pro-preview` (базовая)
-- `gemini-3.1-pro-extended` → `gemini-3.1-pro-extended`
-- `gemini-3.0-flash-preview` / `gemini-3-flash-preview` / `gemini-3.5-flash-preview` → `gemini-3.5-flash`
-- `gemini-3.0-flash-thinking-preview` / `gemini-3-flash-thinking-preview` → `gemini-3.5-flash-extended`
-- `gemini-3.0-pro-preview` / `gemini-3-pro-preview` → `gemini-3.1-pro-preview`
-- `gemini-3-pro-extended` → `gemini-3.1-pro-extended`
+- Любые имена, содержащие `argon` (включая опечатки вроде `argonn`, `gemini-4-argon`) → направляются на **Gemini 4 Argon**.
+- `gemini-3.8-flash` / `gemini-3.5-flash` / `gemini-3-flash` → `gemini-3.8-flash`.
+- `gemini-3.5-flash-lite` / `flash-lite` → `gemini-3.5-flash-lite`.
+- `gemini-3.1-pro` / `gemini-3-pro` → `gemini-3.1-pro-preview`.
+- Добавление `thinking`, `extended`, `deep` или `high` автоматически активирует максимальный уровень Thinking (Level 3).
+- Добавление `medium` активирует промежуточный уровень Thinking (Level 2).
 
 **При подключении через `/v1beta/models/...` (Gemini API):**
-- **ВСЕ** Flash-модели → `gemini-3.5-flash-extended`
+- **ВСЕ** Argon-модели → `gemini-4-argon-extended`
 - **ВСЕ** Pro-модели → `gemini-3.1-pro-extended`
+- **ВСЕ** Flash-модели → `gemini-3.8-flash-extended`
 
-> *Без подписки Pro-модели Google может тихо перенаправить на бесплатную Flash.*
+> *Без подписки Pro-модели и Argon Google может тихо перенаправить на бесплатную Flash.*
 
 ---
 

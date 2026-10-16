@@ -1,5 +1,6 @@
 @echo off
-title Geminiweb2api - Запуск
-echo Geminiweb2api (Refresh Mode)...
-python start.py --refresh
+chcp 65001 >nul
+cd /d "%~dp0"
+title Geminiweb2api
+python start.py
 pause

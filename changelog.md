@@ -2,6 +2,25 @@
 
 Ниже — сводка наших совместных изменений по текущему состоянию проекта.
 
+## 2026-10-17 — v1.4.0
+
+### Поддержка Gemini 4 Argon и актуальных моделей Google Gemini Web (Октябрь 2026)
+- **Добавлена поддержка Gemini 4 Argon** (`gemini-4-argon`, Mode ID: `95a4c0abcba24364`, `model_type = 3`). Теперь запросы с Argon больше не редиректятся в дефолтный Flash, а корректно отправляются на модель Argon (доступна с подпиской Google AI Pro).
+- **Добавлена поддержка Gemini 3.8 Flash** (`gemini-3.8-flash`, Mode ID: `56fdd199312815e2`) и **Gemini 3.5 Flash-Lite** (`gemini-3.5-flash-lite`, Mode ID: `8c46e95b1a07cecc`).
+- **3-уровневая система Thinking (Уровень рассуждений):**
+  - Level 1: `standard` / `low` / `thinking-1`
+  - Level 2: `medium` / `moderate` / `thinking-2`
+  - Level 3: `extended` / `deep` / `high` / `thinking-3`
+- **Улучшена нормализация моделей (`normalize_requested_model`):**
+  - Поддержка синонимов и опечаток (например, `argonn` автоматически нормализуется в `gemini-4-argon`).
+  - Сохранена обратная совместимость со старыми ID (`gemini-3.5-flash`, `gemini-3.1-pro-preview` и т.д.).
+- **Исправление авторизации через Playwright (`auth.py`):**
+  - Удален флаг `--start-minimized`, из-за которого окно авторизации браузера могло не появляться на переднем плане.
+  - Исправлен `start.bat` для корректной работы с UTF-8 кодировкой на Windows.
+- **Безопасность disconnect-чека:**
+  - Проверка `request.is_disconnected()` в `api.py` обёрнута в безопасный try-except блок, предотвращающий падения при запросах без ASGI receive-канала.
+
+
 ## 2026-05-31 - v1.3.2
 
 ### Fixed replies to previous messages
