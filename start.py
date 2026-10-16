@@ -7,15 +7,15 @@ import urllib.request
 import urllib.error
 from log_utils import debug_log, log_line
 
-STATE_FILE = "google_state.json"
-PROFILE_DIR = "chrome_profile"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATE_FILE = os.path.join(BASE_DIR, "google_state.json")
+PROFILE_DIR = os.path.join(BASE_DIR, "chrome_profile")
 SESSION_INVALID_EXIT_CODE = 86
 TOKEN_STATE_KEY = "snlm0e"
 TOKEN_UPDATED_AT_KEY = "snlm0e_updated_at"
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VERSION_FILE = os.path.join(BASE_DIR, "VERSION")
-ONLINE_VERSION_URL = "https://raw.githubusercontent.com/l4ckofsleep/geminiweb2api/main/VERSION"
-ONLINE_RELEASE_URL = "https://api.github.com/repos/l4ckofsleep/geminiweb2api/releases/latest"
+ONLINE_VERSION_URL = "https://raw.githubusercontent.com/Maksim102c/geminiweb2api/main/VERSION"
+ONLINE_RELEASE_URL = "https://api.github.com/repos/Maksim102c/geminiweb2api/releases/latest"
 IS_DEBUG = "--debug" in sys.argv
 
 
@@ -115,7 +115,7 @@ def print_version_mismatch_notice(local_version):
         print_sys(f"[!] Версия отличается от онлайн-репозитория: локальная {local_version}, онлайн {online_version}")
 
 def load_existing_token_state():
-    if not os.path.exists(STATE_FILE):
+    if not os.path.exists(STATE_FILE) or os.path.getsize(STATE_FILE) == 0:
         return {}
 
     try:
@@ -133,10 +133,14 @@ def load_existing_token_state():
     return preserved
 
 def is_mobile():
-    if 'com.termux' in os.environ.get('PREFIX', ''): return True
-    if 'ANDROID_STORAGE' in os.environ: return True
-    if hasattr(sys, 'getandroidapilevel'): return True
-    if sys.platform.startswith('linux'): return True
+    if "--mobile" in sys.argv:
+        return True
+    if 'com.termux' in os.environ.get('PREFIX', ''):
+        return True
+    if 'ANDROID_STORAGE' in os.environ:
+        return True
+    if hasattr(sys, 'getandroidapilevel'):
+        return True
     return False
 
 def run_auth_mobile():
@@ -184,8 +188,12 @@ def run_auth_mobile():
     }
     state.update(load_existing_token_state())
 
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f)
+    tmp_file = f"{STATE_FILE}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_file, STATE_FILE)
 
     print_sys("\n[+] УСПЕХ! Токены сохранены в файл.")
     print_debug("Manual auth state saved", {"state_file": STATE_FILE, "keys": list(state.keys())})
@@ -195,7 +203,8 @@ def run_auth_pc(proxy_url=None):
     print_sys("💻 ОБНАРУЖЕН ПК (Windows/Mac/Linux)")
     print_sys("="*50)
     print_sys("[*] Запуск автоматической авторизации через Playwright...")
-    args = [sys.executable, "auth.py"]
+    auth_script = os.path.join(BASE_DIR, "auth.py")
+    args = [sys.executable, auth_script]
     if proxy_url:
         args.extend(["--proxy", proxy_url])
     if IS_DEBUG:
@@ -212,7 +221,8 @@ def run_auto_refresh_pc(proxy_url=None):
 
 def run_api(extra_args):
     print_sys("\n[*] Запуск главного сервера API...")
-    args = [sys.executable, "api.py"] + extra_args
+    api_script = os.path.join(BASE_DIR, "api.py")
+    args = [sys.executable, api_script] + extra_args
     print_debug("run_api args", args)
     return subprocess.run(args)
 
@@ -280,6 +290,26 @@ def main():
         "proxy_url": proxy_url,
         "extra_api_args": extra_api_args,
     })
+
+    if os.path.exists(STATE_FILE):
+        if os.path.getsize(STATE_FILE) == 0:
+            print_sys(f"[!] Файл {STATE_FILE} пуст (0 байт). Удаляем битый файл...")
+            try:
+                os.remove(STATE_FILE)
+            except Exception:
+                pass
+        else:
+            try:
+                with open(STATE_FILE, "r", encoding="utf-8") as f:
+                    test_state = json.load(f)
+                if not isinstance(test_state, dict):
+                    os.remove(STATE_FILE)
+            except Exception:
+                print_sys(f"[!] Файл {STATE_FILE} поврежден. Удаляем для чистой авторизации...")
+                try:
+                    os.remove(STATE_FILE)
+                except Exception:
+                    pass
 
     if not os.path.exists(STATE_FILE):
         if mobile:

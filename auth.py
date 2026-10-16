@@ -4,7 +4,8 @@ import sys
 import json
 from log_utils import debug_log, log_line
 
-STATE_FILE = "google_state.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATE_FILE = os.path.join(BASE_DIR, "google_state.json")
 TOKEN_STATE_KEY = "snlm0e"
 TOKEN_UPDATED_AT_KEY = "snlm0e_updated_at"
 IS_DEBUG = "--debug" in sys.argv
@@ -186,7 +187,7 @@ def load_existing_token_state():
 def login_and_save_state():
     print_sys("\n[*] Инициализация браузера для входа...")
     
-    profile_dir = os.path.join(os.getcwd(), "chrome_profile")
+    profile_dir = os.path.join(BASE_DIR, "chrome_profile")
     has_profile = has_saved_browser_profile(profile_dir)
     
     # Ищем прокси в аргументах запуска
@@ -254,7 +255,21 @@ def login_and_save_state():
             print_sys("[!] КОГДА ВОЙДЕТЕ — вернитесь в эту консоль и нажмите ENTER.")
             print_sys("="*50 + "\n")
             
-            input("👉 Нажмите ENTER, когда закончите авторизацию... ")
+            is_interactive = sys.stdin.isatty() and ("--non-interactive" not in sys.argv)
+            if is_interactive:
+                input("👉 Нажмите ENTER, когда закончите авторизацию... ")
+            else:
+                print_sys("[*] Фоновый режим: ожидание завершения входа в браузере (до 120 сек)...")
+                logged_in_detected = False
+                for _ in range(60):
+                    page.wait_for_timeout(2000)
+                    cookies = context.cookies()
+                    if any(c.get('name') == '__Secure-1PSID' for c in cookies) and any(c.get('name') == 'SAPISID' for c in cookies):
+                        logged_in_detected = True
+                        break
+                if not logged_in_detected:
+                    print_sys("[!] Время ожидания входа в фоновом режиме истекло.")
+                    sys.exit(1)
 
             print_sys("[*] Отлично! Переходим на gemini.google.com для сохранения сессии...")
             try:
@@ -275,8 +290,12 @@ def login_and_save_state():
             "preserved_token_keys": [key for key in [TOKEN_STATE_KEY, TOKEN_UPDATED_AT_KEY] if key in state],
         })
 
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(state, f)
+        tmp_file = f"{STATE_FILE}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_file, STATE_FILE)
 
         print_sys("\n[+] УСПЕХ! Сессия надежно сохранена в 'google_state.json'.")
         print_debug("Auth state saved", {

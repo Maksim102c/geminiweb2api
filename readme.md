@@ -1,8 +1,8 @@
 # 🍌 GeminiWeb2API
 
-> **Версия:** 1.4  
-> **Автор:** [@roflenskoy](https://t.me/roflenskoy) (Telegram)  
-> **Репозиторий:** [github.com/l4ckofsleep/geminiweb2api](https://github.com/l4ckofsleep/geminiweb2api)
+> **Версия:** 1.4.1  
+> **Форк:** [github.com/Maksim102c/geminiweb2api](https://github.com/Maksim102c/geminiweb2api)  
+> **Оригинальный проект:** [github.com/l4ckofsleep/geminiweb2api](https://github.com/l4ckofsleep/geminiweb2api)
 
 Неофициальный API-прокси, превращающий веб-версию **Google Gemini** в локальный сервер с OpenAI-совместимым и Gemini-совместимым API. Работает с **SillyTavern** (текст), **SillyImages** (картинки) и любыми другими клиентами.
 

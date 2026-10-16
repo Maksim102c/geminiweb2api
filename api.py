@@ -26,7 +26,6 @@ IS_MOBILE = (
     'com.termux' in os.environ.get('PREFIX', '')
     or 'ANDROID_STORAGE' in os.environ
     or hasattr(sys, 'getandroidapilevel')
-    or sys.platform.startswith('linux')
 )
 
 PROXY_URL = None
@@ -43,10 +42,11 @@ if "--port" in sys.argv:
     except (IndexError, ValueError):
         pass
 
-OUTPUT_DIR = "generated_images"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(BASE_DIR, "generated_images")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-STATE_FILE = "google_state.json"
+STATE_FILE = os.path.join(BASE_DIR, "google_state.json")
 TOKEN_STATE_KEY = "snlm0e"
 TOKEN_UPDATED_AT_KEY = "snlm0e_updated_at"
 SESSION_INVALID_EXIT_CODE = 86
@@ -57,10 +57,26 @@ HEADERS = {
     "x-same-domain": "1" 
 }
 
+CACHED_SAPISID = None
+
+def dynamic_sapisid_auth_hook(request):
+    sapisid = CACHED_SAPISID
+    if not sapisid:
+        cookie_header = request.headers.get("Cookie", "")
+        match = re.search(r"SAPISID=([^;]+)", cookie_header)
+        if match:
+            sapisid = match.group(1).strip()
+    if sapisid:
+        timestamp = str(int(time.time() * 1000))
+        hash_str = f"{timestamp} {sapisid} https://gemini.google.com"
+        sha1 = hashlib.sha1(hash_str.encode()).hexdigest()
+        request.headers["Authorization"] = f"SAPISIDHASH {timestamp}_{sha1}"
+
 client_kwargs = {
     "headers": HEADERS,
     "timeout": 150.0,
-    "follow_redirects": True
+    "follow_redirects": True,
+    "event_hooks": {"request": [dynamic_sapisid_auth_hook]}
 }
 if PROXY_URL:
     client_kwargs["proxy"] = PROXY_URL
@@ -68,11 +84,12 @@ if PROXY_URL:
 
 GLOBAL_CLIENT = httpx.AsyncClient(**client_kwargs)
 
-# --- Глобальный кэш для снижения спама запросами ---
+# --- Глобальный кэш и блокировки для безопасного переключения моделей ---
 CACHED_SNLM0E = None
 CURRENT_MODEL_ID = None
 CURRENT_THINKING_LEVEL = 1
 session_initialized = False
+MODEL_LOCK = asyncio.Lock()
 browser_request_context_cache = {}
 browser_request_context_updated_at = 0.0
 browser_request_context_lock = threading.Lock()
@@ -224,18 +241,35 @@ def load_state_file():
     if not os.path.exists(STATE_FILE):
         return None
     try:
+        if os.path.getsize(STATE_FILE) == 0:
+            print_sys(f"[!] Файл {STATE_FILE} пуст (0 байт). Удаляем битый файл...")
+            try:
+                os.remove(STATE_FILE)
+            except Exception:
+                pass
+            return None
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             state = json.load(f)
         return state if isinstance(state, dict) else None
-    except Exception:
+    except Exception as e:
+        print_sys(f"[!] Ошибка чтения {STATE_FILE}: {e}. Удаляем поврежденный файл...")
+        try:
+            os.remove(STATE_FILE)
+        except Exception:
+            pass
         return None
 
 def save_state_file(state):
     try:
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(state, f)
+        tmp_file = f"{STATE_FILE}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_file, STATE_FILE)
         return True
-    except Exception:
+    except Exception as e:
+        if IS_DEBUG: print_sys(f"[DEBUG] Ошибка сохранения state файла: {e}")
         return False
 
 def load_saved_snlm0e(state=None):
@@ -317,7 +351,7 @@ async def run_desktop_auto_refresh(reason):
         print_sys(f"[*] Старый файл {STATE_FILE} удален перед авто-refresh.")
 
     auth_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auth.py")
-    args = [sys.executable, auth_script]
+    args = [sys.executable, auth_script, "--non-interactive"]
     if PROXY_URL:
         args.extend(["--proxy", PROXY_URL])
 
@@ -470,8 +504,9 @@ async def init_session():
     print_sys("[*] Загрузка сессии из google_state.json...")
     GLOBAL_CLIENT.cookies.clear()
     GLOBAL_CLIENT.headers.pop("Authorization", None)
-    global CACHED_SNLM0E, CURRENT_MODEL_ID, CURRENT_THINKING_LEVEL, session_initialized, browser_request_context_cache, browser_request_context_updated_at
+    global CACHED_SNLM0E, CACHED_SAPISID, CURRENT_MODEL_ID, CURRENT_THINKING_LEVEL, session_initialized, browser_request_context_cache, browser_request_context_updated_at
     CACHED_SNLM0E = None
+    CACHED_SAPISID = None
     CURRENT_MODEL_ID = None
     CURRENT_THINKING_LEVEL = 1
     session_initialized = False
@@ -509,6 +544,7 @@ async def init_session():
         })
                     
         if has_base_cookie and sapisid:
+            CACHED_SAPISID = sapisid
             timestamp = str(int(time.time() * 1000))
             hash_str = f"{timestamp} {sapisid} https://gemini.google.com"
             sha1 = hashlib.sha1(hash_str.encode()).hexdigest()
@@ -864,7 +900,7 @@ async def upload_document_to_gemini(text_content, filename="conversation-transcr
 
 INTERNAL_GOOGLE_THINKING_PREFIXES = (
     "Constructing the Scene", "Analyzing Scene Flow", "Composing Sensory Details",
-    "Validating Output Criteria", "Refining Character Response", "Observing Seraphim",
+    "Validating Output Criteria", "Refining Character Response",
     "Verifying Formatting", "Assessing Tactical", "Composing the Scene",
     "Refining the Output", "Finalizing the Scene", "Expanding the Scene",
     "Evaluating the Narrative", "Assessing the Reaction", "Composing the Response",
@@ -1330,14 +1366,15 @@ async def generate_text_core(
 
     is_extended = thinking_level > 1
 
-    if CURRENT_MODEL_ID != mode_id or CURRENT_THINKING_LEVEL != thinking_level:
-        success = await set_model_preference(snlm0e, mode_id, is_extended=is_extended)
-        if success:
-            CURRENT_MODEL_ID = mode_id
-            CURRENT_THINKING_LEVEL = thinking_level
-            await asyncio.sleep(1.0)
-    else:
-        if IS_DEBUG: print_sys(f"[*] Модель уже настроена правильно, пропускаем лишний запрос.")
+    async with MODEL_LOCK:
+        if CURRENT_MODEL_ID != mode_id or CURRENT_THINKING_LEVEL != thinking_level:
+            success = await set_model_preference(snlm0e, mode_id, is_extended=is_extended)
+            if success:
+                CURRENT_MODEL_ID = mode_id
+                CURRENT_THINKING_LEVEL = thinking_level
+                await asyncio.sleep(1.0)
+        else:
+            if IS_DEBUG: print_sys(f"[*] Модель уже настроена правильно, пропускаем лишний запрос.")
 
     candidate_id = uuid.uuid4().hex
     request_uuid = str(uuid.uuid4()).upper()
@@ -2334,7 +2371,7 @@ def build_roleplay_safe_prompt(enable_google_search=False, latest_user_text="", 
         )
     if prefill_text:
         prompt += (
-            f"\nThe SillyTavern preset requires the next answer to start with the literal prefix {prefill_text}. "
+            f"\nThe client preset requires the next answer to start with the literal prefix {prefill_text}. "
             "Do not treat that prefix as already written. Emit it as the first characters of your answer, "
             "fill the block, close it, then write the visible reply."
         )
